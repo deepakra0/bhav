@@ -1,0 +1,41 @@
+#!/bin/bash
+#=========================================================================
+src=/home/deepak/data
+wd=/home/deepak/data/scripts
+db=$src/BhavDB
+sqlite=/usr/bin/sqlite3
+#
+#-------------------------------------------------------------------------
+# Create Tables
+#
+$sqlite $db ".read $wd/tableCreation"
+[[ $? -eq 0 ]] && { printf "\nTables created..."; } || { printf "\nCannot create tables..."; exit 1; }
+#
+#-------------------------------------------------------------------------
+# Load ISIN info 
+#
+$sqlite $db -csv ".import $wd/company.csv company"
+[[ $? -eq 0 ]] && { printf "\nCompany data loaded..."; } || { printf "\nCannot load company data..."; exit 1; }
+#
+#-------------------------------------------------------------------------
+# Load 52 weeks high low
+#
+awk -F',' '{print "update company set \
+ [52WkHigh]="$3" \
+,[52WkHighDt]=\x27"$4"\x27 \
+,[52WkLow]="$5" \
+,[52WklowDt]=\x27"$6"\x27 \
+,[52WkHighDays]="$7" \
+,[52WkLowDays]="$8" \
+ where Symbol=\x27"$1"\x27 and Series=\x27"$2"\x27;"}' $wd/CM_52_wk_High_low.csv | \
+$sqlite $db '.read /dev/stdin'
+[[ $? -eq 0 ]] && { printf "\n52 weeks high/low data loaded..."; } || { printf "\nCannot load 52 weeks high/low data..."; exit 1; }
+#
+#-------------------------------------------------------------------------
+# Load ISIN to data table
+#
+for table in Close High PrevClose YearVolatility DayVolatility LogReturn PrevVolatility DelPer Low Trade DelQty Open TrdQty; do
+	$sqlite $db "insert into $table (ISIN) select distinct ISIN from company;"
+	[[ $? -eq 0 ]] && { printf "\nLoaded ISIN to $table..."; } || { printf "\nCannot load ISIN to $table..."; exit 1; }
+done
+printf "\nDB build completed...\n"

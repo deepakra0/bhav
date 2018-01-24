@@ -1,0 +1,13 @@
+#!/bin/bash
+#===================================================================
+srcdir=/home/deepak/data
+destdir=/home/deepak/data/work
+db=/home/deepak/data/BhavDB
+sqlite=/usr/bin/sqlite3
+#-------------------------------------------------------------------
+for table in Open Close Low High Trade PrevClose YearVolatility DayVolatility LogReturn PrevVolatility DelPer DelQty TrdQty; do
+	printf "Output...$table\n";
+	csvfile=$destdir/$table".csv"
+	[[ -r $csvfile ]] && { rm $csvfile; } 
+	$sqlite $db -csv -header -cmd ".output $csvfile" "select * from company left join $table on company.ISIN=$table.ISIN where company.Series='EQ'"
+done

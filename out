@@ -1,11 +1,12 @@
 #!/bin/bash
 #===================================================================
-srcdir=/home/deepak/data
-destdir=/home/deepak/data/work
-db=/home/deepak/data/BhavDB
+basedir=/home/XBBJT69
+destdir=$basedir/bhav/output
+db=$basedir/data/BhavDB
 sqlite=/usr/bin/sqlite3
 #-------------------------------------------------------------------
-for table in Open Close Low High Trade PrevClose YearVolatility DayVolatility LogReturn PrevVolatility DelPer DelQty TrdQty; do
+[[ -z "$*" ]] && { tables="Open Close Low High Trade PrevClose YearVolatility DayVolatility LogReturn PrevVolatility DelPer DelQty TrdQty"; } || { tables=$*; }
+for table in $tables; do
 	printf "Output...$table\n";
 	csvfile=$destdir/$table".csv"
 	[[ -r $csvfile ]] && { rm $csvfile; } 

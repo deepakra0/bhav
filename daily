@@ -1,5 +1,9 @@
 #!/bin/bash
 #=======================================================================
+# curl -k --proxy emeaproxy.bnymellon.net:8080 --proxy-ntlm --proxy-user "pac\xbbjt69:Pr0bl3m$" https://www.nseindia.com/content/historical/EQUITIES/2018/JAN/cm23JAN2018bhav.csv.zip -o cm23JAN2018bhav.csv.zip
+getopts ":c" opt
+shift $((OPTIND -1))
+[[ $opt == "c" ]] && { fnlist="compupd bhav cmvolt mto"; } || { fnlist="bhav cmvolt mto"; }
 [[ $# -ne 3 ]] && { printf "$0: Invalid Arguments\n"; exit 1; }
 day=$1
 nmonth=$2
@@ -7,59 +11,68 @@ year=$3
 months=(DUM JAN FEB MAR APR MAY JUN JUL AUG SEP OCT NOV DEC)
 month=${months[$((10#$nmonth))]} 
 printf "\n$day-$month-$year --------------------------------------------------------------\n"
+[[ $(date -d $year$nmonth$day +%s) -gt $(date +%s) ]] && { printf " $day-$month-$year is in future\n"; exit; }
 [[ $(date -d $year$nmonth$day +%u) -ge 6 ]] && { printf "$day-$month-$year is weekend\n"; exit; }
-[[ "$day$month$year" =~ ^(26JAN2018|13FEB2018|02MAR2018|29MAR2018|30MAR2018|01MAY2018|15AuG2018|22AUG2018|13SEP2018|20SEP2018|02OCT2018|18OCT2018|07NOV2018|08NOV2018|23NOV2018|25DEC2018)$ ]] && { printf "$day-$month-$year is holiday\n"; exit; }
+[[ "$day$month$year" =~ ^(01JAN2018|26JAN2018|13FEB2018|02MAR2018|29MAR2018|30MAR2018|01MAY2018|15AuG2018|22AUG2018|13SEP2018|20SEP2018|02OCT2018|18OCT2018|07NOV2018|08NOV2018|23NOV2018|25DEC2018)$ ]] && { printf "$day-$month-$year is holiday\n"; exit; }
 #=======================================================================
-basedir=/home/deepak/data
-destdir=/home/deepak/data/bhav
-srcdir=/home/deepak/data/bhav
+basedir=/home/XBBJT69/data
+destdir=$basedir/archive
+srcdir=$basedir/input
 db=$basedir/BhavDB
 sqlite=/usr/bin/sqlite3
+dl=/usr/bin/curl
+cred="pac\xbbjt69:Inc!d3nt"
+dlopt=" -k --silent --proxy emeaproxy.bnymellon.net:8080 --proxy-ntlm --proxy-user "
 #=======================================================================
 bhav() {
 	link=https://www.nseindia.com/content/historical/EQUITIES/$year/$month/cm$day$month$year"bhav.csv.zip"
 	src=$srcdir"/cm"$day$month$year"bhav.csv.zip"
-	[[ ! -r $src ]] && { /usr/bin/wget -qU Firefox/30.0 $link -P $srcdir; [[ $? -ne 0 ]] && { return 1; } }
+	[[ ! -r $src ]] && { $dl $dlopt "$cred" $link -o $src; [[ $? -ne 0 ]] && { return 1; } }
 	dest=$destdir"/cm"$day$month$year"bhav.csv" 
 	[[ ! -r $dest ]] && { /usr/bin/unzip -qo $src -d $destdir; }
 	$sqlite $db "delete from bhav"
-	/bin/sed '1,1d' $dest|$sqlite $db -separator ',' ".import /dev/stdin bhav" 
-	for table in Open Close PrevClose High Low TrdQty Trade; do
-		sql="alter table $table add [$day$month$year] REAL;"
-		$sqlite $db "$sql"
-		sql="update $table set [$day$month$year]=(select bhav.$table from bhav where bhav.ISIN=$table.ISIN and bhav.Series='EQ')"
+	/bin/sed '1,1d' $dest|$sqlite $db -separator ',' ".import /dev/stdin bhav" 2>/dev/null 
+	for table in Open Close PrevClose High Low TrdQty Trade TrdVal; do
+		sql="alter table $table add [$day$month$year] REAL;update $table set [$day$month$year]=(select bhav.$table from bhav where bhav.ISIN=$table.ISIN and bhav.Series='EQ')"
 		$sqlite $db "$sql"
 	done
-	[[ ! $dest ]] && { rm $dest; }
+	$sqlite $db "alter table DifClose add [$day$month$year] REAL;update DifClose set [$day$month$year]=(select bhav.Close - bhav.PrevClose from bhav where DifClose.ISIN=bhav.ISIN);"
+	$sqlite $db "alter table DifCloseHigh add [$day$month$year] REAL;update DifCloseHigh set [$day$month$year]=(select bhav.Close - bhav.High from bhav where DifCloseHigh.ISIN=bhav.ISIN);"
+	$sqlite $db "alter table DifHighLow add [$day$month$year] REAL;update DifHighLow set [$day$month$year]=(select bhav.High - bhav.Low from bhav where DifHighLow.ISIN=bhav.ISIN);"
+	$sqlite $db "alter table DifOpenLow add [$day$month$year] REAL;update DifOpenLow set [$day$month$year]=(select bhav.Open - bhav.Low from bhav where DifOpenLow.ISIN=bhav.ISIN);"
+	$sqlite $db "alter table AvgWtVol add [$day$month$year] REAL;update AvgWtVol set [$day$month$year]=(select bhav.TrdVal/bhav.TrdQty from bhav where AvgWtVol.ISIN=bhav.ISIN);"
+	$sqlite $db "alter table AvgTrd add [$day$month$year] REAL;update AvgTrd set [$day$month$year]=(select bhav.TrdQty/bhav.Trade from bhav where AvgTrd.ISIN=bhav.ISIN);"
+	#[[ ! $dest ]] && { rm $dest; }
 	return 0
 }
 #-----------------------------------------------------------------------
 cmvolt() {
 	link=https://www.nseindia.com/archives/nsccl/volt/CMVOLT_$day$nmonth$year".CSV"
-	src=$srcdir"/CMVOLT_"$day$nmonth$year".CSV"
-	[[ ! -r $src ]] && { /usr/bin/wget -qU Firefox/30.0 $link -P $srcdir; [[ $? -ne 0 ]] && { return 1; } }
-	$sqlite $db "delete from cmvolt"
-	/bin/sed '1,2d' $src | $sqlite $db -separator ',' ".import /dev/stdin cmvolt" 
-	[[ $? -ne 0 ]] && { retrun 21; } 
-	for table in LogReturn PrevVolatility DayVolatility YearVolatility; do
-		sql="alter table $table add [$day$month$year] REAL;"
-		$sqlite $db "$sql"
-#		[[ $? -ne 0 ]] && { return 22; } 
-		sql="update $table set [$day$month$year]=(select cmvolt.$table from cmvolt left join company on company.Symbol=cmvolt.Symbol where $table.ISIN=company.ISIN)"
-		$sqlite $db "$sql"
-		[[ $? -ne 0 ]] && { return 23; }
-	done	
-	return 0
+    src=$srcdir"/CMVOLT_"$day$nmonth$year".CSV"
+    [[ ! -r $src ]] && { $dl $dlopt "$cred" $link -o $src; [[ $? -ne 0 ]] && { return 1; } }
+    $sqlite $db "delete from cmvolt"
+    /bin/sed '1,2d' $src | $sqlite $db -separator ',' ".import /dev/stdin cmvolt"
+    [[ $? -ne 0 ]] && { retrun 21; }
+    for table in LogReturn PrevVolatility DayVolatility YearVolatility; do
+        sql="alter table $table add [$day$month$year] REAL;"
+        $sqlite $db "$sql"
+#        [[ $? -ne 0 ]] && { return 22; }
+        sql="update $table set [$day$month$year]=(select cmvolt.$table from cmvolt left join company on company.Symbol=cmvolt.Symbol where $table.ISIN=company.ISIN)"
+        $sqlite $db "$sql"
+        [[ $? -ne 0 ]] && { return 23; }
+    done
+    return 0
 }
+
 #-----------------------------------------------------------------------
 mto(){
 	link=https://www.nseindia.com/archives/equities/mto/MTO_$day$nmonth$year".DAT"
 	src=$srcdir"/MTO_"$day$nmonth$year".DAT"
-	[[ ! -r $src ]] && { /usr/bin/wget -qU Firefox/30.0 $link -P $srcdir; [[ $? -ne 0 ]] && { return 1; } }
+	[[ ! -r $src ]] && { $dl $dlopt "$cred" $link -o $src;[[ $? -ne 0 ]] && { return 1; } }
 	$sqlite $db "delete from mto"
 	/bin/sed '1,4d' $src | $sqlite $db -separator ',' ".import /dev/stdin mto" 
 	[[ $? -ne 0 ]] && { retrun 21; } 
-	[[ -r $dest ]] && { rm $dest; }
+#	[[ -r $dest ]] && { rm $dest; }
 	for table in DelQty DelPer; do
 		sql="alter table $table add [$day$month$year] REAL;"
 		$sqlite $db "$sql"
@@ -70,13 +83,36 @@ mto(){
 	done	
 	return 0
 }
+#-----------------------------------------------------------------------
+# Load 52 weeks high low
+#
+compupd() {
+#	link=https://www.nseindia.com/content/CM_52_wk_High_low.csv
+	src=$srcdir/CM_52_wk_High_low.csv
+#	[[ ! -r $src ]] && { $dl $dlopt "$cred" $link -o $src;[[ $? -ne 0 ]] && { return 1; } }
+	[[ ! -r $src ]] && { return 1; }
+	awk -F',' '{print "update company set \
+	 [52WkHigh]="$3" \
+	,[52WkHighDt]=\x27"$4"\x27 \
+	,[52WkLow]="$5" \
+	,[52WklowDt]=\x27"$6"\x27 \
+	,[52WkHighDays]="$7" \
+	,[52WkLowDays]="$8" \
+	 where Symbol=\x27"$1"\x27 and Series=\x27"$2"\x27;"}' $src | \
+	$sqlite $db '.read /dev/stdin'
+	[[ $? -eq 0 ]] && { return 0; } || { return 23; }
+}
+#
 #=======================================================================
-for fn in bhav cmvolt mto; do
+for fn in $fnlist; do
+	printf "$fn .."
 	eval $fn
-	if   [[ $? -eq 0  ]]; then printf "$fn completed successfully\n";
-	elif [[ $? -eq 1  ]]; then printf "$fn download data failed\n";
-	elif [[ $? -eq 21 ]]; then printf "$fn loading stage table failed\n";
-	elif [[ $? -eq 22 ]]; then printf "$fn column creating failed\n";
-	elif [[ $? -eq 23 ]]; then printf "$fn loading data table failed\n";
+	if   [[ $? -eq 0  ]]; then printf ". completed successfully\n";
+	elif [[ $? -eq 1  ]]; then printf ". download data failed\n";
+	elif [[ $? -eq 21 ]]; then printf ". loading stage table failed\n";
+	elif [[ $? -eq 22 ]]; then printf ". column creating failed\n";
+	elif [[ $? -eq 23 ]]; then printf ". loading data table failed\n";
 	fi	
 done
+
+
